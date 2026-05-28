@@ -56,6 +56,12 @@
         </v-row>
 
         <!-- Dashboard Tabs -->
+        <div class="d-flex justify-space-between align-center mb-4">
+          <h2 class="text-h6 font-weight-medium text-grey-darken-3">Reconciliation Dashboard</h2>
+          <v-btn color="primary" prepend-icon="mdi-refresh" @click="revalidate" elevation="2">
+            Revalidate
+          </v-btn>
+        </div>
         <v-card class="elevation-1 rounded-lg">
           <v-tabs v-model="activeTab" color="primary" bg-color="white">
             <v-tab value="missingAssignment">
@@ -86,6 +92,7 @@
                   :items="missingFromAssignment" 
                   filename="MissingFromAssignment.csv"
                   :errorCheck="() => true" 
+                  @add-row="datasets.juneCompletion.unshift($event)"
                 />
               </v-window-item>
 
@@ -99,6 +106,7 @@
                   :items="missingFromCompletion" 
                   filename="MissingFromCompletion.csv"
                   :errorCheck="() => true" 
+                  @add-row="datasets.octStudent.unshift($event)"
                 />
               </v-window-item>
 
@@ -107,6 +115,7 @@
                   title="October Course Assignment" 
                   :items="datasets.octCourse" 
                   @update:items="datasets.octCourse = $event"
+                  @add-row="datasets.octCourse.unshift($event)"
                   filename="OctoberCourse_Edited.csv"
                 />
               </v-window-item>
@@ -116,6 +125,7 @@
                   title="October Student Assignment" 
                   :items="datasets.octStudent" 
                   @update:items="datasets.octStudent = $event"
+                  @add-row="datasets.octStudent.unshift($event)"
                   filename="OctoberStudent_Edited.csv"
                 />
               </v-window-item>
@@ -125,6 +135,7 @@
                   title="June Student Course Completion" 
                   :items="datasets.juneCompletion" 
                   @update:items="datasets.juneCompletion = $event"
+                  @add-row="datasets.juneCompletion.unshift($event)"
                   filename="JuneCompletion_Edited.csv"
                 />
               </v-window-item>
@@ -172,14 +183,28 @@ const studentKeys = [...courseKeys, 'StateID']
 const normalizeRow = (row) => {
   const normalized = {}
   for (const key in row) {
-    // Basic normalization: trim keys
-    normalized[key.trim()] = row[key]
+    const cleanKey = key.trim()
+    let val = row[key]
+    if (cleanKey === 'ReportingDistrictCode' && val) {
+      val = String(val).trim().padStart(6, '0')
+    } else if (cleanKey === 'ReportingSchoolCode' && val) {
+      val = String(val).trim().padStart(4, '0')
+    }
+    normalized[cleanKey] = val
   }
   return normalized
 }
 
 const generateKeyString = (row, keys) => {
-  return keys.map(k => String(row[k] || '').trim().toLowerCase()).join('|')
+  return keys.map(k => {
+    let val = String(row[k] || '').trim().toLowerCase()
+    if (k === 'ReportingDistrictCode' && val) {
+      val = val.padStart(6, '0')
+    } else if (k === 'ReportingSchoolCode' && val) {
+      val = val.padStart(4, '0')
+    }
+    return val
+  }).join('|')
 }
 
 const handleFileUpload = (file, datasetName) => {
@@ -197,39 +222,75 @@ const handleFileUpload = (file, datasetName) => {
     skipEmptyLines: true,
     complete: (results) => {
       // Normalize rows
-      datasets[datasetName] = results.data.map(normalizeRow)
+      let normalizedData = results.data.map(normalizeRow)
+
+      // Filter for Grade > 5 if a grade column exists
+      if (normalizedData.length > 0) {
+        const keys = Object.keys(normalizedData[0])
+        // Clean keys to handle spaces and underscores (e.g. 'Grade Level' -> 'gradelevel')
+        const cleanKeys = keys.map(k => k.toLowerCase().replace(/[^a-z0-9]/g, ''))
+        
+        let gradeKeyIndex = cleanKeys.findIndex(k => 
+          ['grade', 'gradelevel', 'stategrade', 'studentgrade', 'currentgrade'].includes(k)
+        )
+        // Fallback: any column with 'grade' in it
+        if (gradeKeyIndex === -1) {
+          gradeKeyIndex = cleanKeys.findIndex(k => k.includes('grade') && !k.includes('upgrade'))
+        }
+        
+        if (gradeKeyIndex !== -1) {
+          const gradeKey = keys[gradeKeyIndex]
+          normalizedData = normalizedData.filter(row => {
+            const val = String(row[gradeKey] || '').trim()
+            const num = parseInt(val, 10)
+            if (!isNaN(num)) {
+              if (num > 5) {
+                // Zero-pad to 2 digits
+                row[gradeKey] = String(num).padStart(2, '0')
+                return true
+              }
+            }
+            return false // Drop K, PK, PKP, etc.
+          })
+        }
+      }
+
+      datasets[datasetName] = normalizedData
+      revalidate()
     }
   })
 }
 
-// Missing from Assignment: Records present in the June Course Completion file but missing matching course/student keys in the October Student files.
-const missingFromAssignment = computed(() => {
-  if (!datasets.juneCompletion.length || !datasets.octStudent.length) return []
+const missingFromAssignment = ref([])
+const missingFromCompletion = ref([])
 
+const revalidate = () => {
+  if (!datasets.juneCompletion.length || !datasets.octStudent.length) {
+    missingFromAssignment.value = []
+    missingFromCompletion.value = []
+    return
+  }
+
+  // Missing from Assignment
   const octStudentSet = new Set(datasets.octStudent.map(row => generateKeyString(row, studentKeys)))
-
-  return datasets.juneCompletion.filter(juneRow => {
+  missingFromAssignment.value = datasets.juneCompletion.filter(juneRow => {
     const juneKey = generateKeyString(juneRow, studentKeys)
     return !octStudentSet.has(juneKey)
   })
-})
 
-// Missing from Completion: Records present in the October Student Assignment files but missing from the June Course Completion file.
-const missingFromCompletion = computed(() => {
-  if (!datasets.juneCompletion.length || !datasets.octStudent.length) return []
-
+  // Missing from Completion
   const juneCompletionSet = new Set(datasets.juneCompletion.map(row => generateKeyString(row, studentKeys)))
-
-  return datasets.octStudent.filter(octRow => {
+  missingFromCompletion.value = datasets.octStudent.filter(octRow => {
     const octKey = generateKeyString(octRow, studentKeys)
     return !juneCompletionSet.has(octKey)
   })
-})
+}
 </script>
 
 <style>
 /* Global app styles if needed */
 html {
   overflow-y: auto;
+  font-size: 75% !important;
 }
 </style>

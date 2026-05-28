@@ -14,21 +14,36 @@
     
     <v-data-table
       :headers="headers"
-      :items="localItems"
+      :items="filteredItems"
       :items-per-page="10"
       class="elevation-1 rounded-lg"
       hover
       density="compact"
     >
-      <template v-slot:item="{ item, index }">
+      <template v-slot:body.prepend>
         <tr>
-          <td v-for="header in headers" :key="header.key" :class="{ 'error-cell': isError(item, header.key) }">
+          <td v-for="header in headers" :key="header.key" class="pa-1 bg-grey-lighten-4">
+            <v-text-field
+              v-model="filters[header.key]"
+              density="compact"
+              variant="outlined"
+              hide-details
+              placeholder="Filter..."
+              bg-color="white"
+            ></v-text-field>
+          </td>
+        </tr>
+      </template>
+
+      <template v-slot:item="{ item }">
+        <tr>
+          <td v-for="header in headers" :key="header.key" :class="{ 'error-cell': isError(item.raw || item, header.key) }">
             <div 
-              v-if="editingCell.index !== index || editingCell.key !== header.key"
-              @click="startEdit(index, header.key, item[header.key])"
+              v-if="editingCell.item !== item || editingCell.key !== header.key"
+              @click="startEdit(item, header.key, (item.raw || item)[header.key])"
               class="editable-cell"
             >
-              {{ item[header.key] || ' ' }}
+              {{ (item.raw || item)[header.key] || ' ' }}
             </div>
             <v-text-field
               v-else
@@ -37,8 +52,8 @@
               hide-details
               variant="underlined"
               autofocus
-              @blur="saveEdit(index, header.key)"
-              @keyup.enter="saveEdit(index, header.key)"
+              @blur="saveEdit(item, header.key)"
+              @keyup.enter="saveEdit(item, header.key)"
               @keyup.esc="cancelEdit"
             ></v-text-field>
           </td>
@@ -65,7 +80,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:items'])
+const emit = defineEmits(['update:items', 'add-row'])
 
 const localItems = ref([])
 
@@ -84,24 +99,47 @@ const headers = computed(() => {
   }))
 })
 
-const editingCell = ref({ index: -1, key: null })
+const filters = ref({})
+
+const filteredItems = computed(() => {
+  return localItems.value.filter(row => {
+    for (const key in filters.value) {
+      const filterValue = filters.value[key]
+      if (filterValue) {
+        const rowValue = String(row[key] || '').toLowerCase()
+        if (!rowValue.includes(filterValue.toLowerCase())) {
+          return false
+        }
+      }
+    }
+    return true
+  })
+})
+
+const editingCell = ref({ item: null, key: null })
 const editingValue = ref('')
 
-const startEdit = (index, key, value) => {
-  editingCell.value = { index, key }
+const startEdit = (item, key, value) => {
+  editingCell.value = { item, key }
   editingValue.value = value
 }
 
-const saveEdit = (index, key) => {
-  if (editingCell.value.index === index && editingCell.value.key === key) {
-    localItems.value[index][key] = editingValue.value
-    editingCell.value = { index: -1, key: null }
+const saveEdit = (item, key) => {
+  if (editingCell.value.item === item && editingCell.value.key === key) {
+    const rawItem = item.raw || item
+    const idx = localItems.value.indexOf(rawItem)
+    if (idx !== -1) {
+      localItems.value[idx][key] = editingValue.value
+    } else {
+      rawItem[key] = editingValue.value
+    }
+    editingCell.value = { item: null, key: null }
     emit('update:items', localItems.value)
   }
 }
 
 const cancelEdit = () => {
-  editingCell.value = { index: -1, key: null }
+  editingCell.value = { item: null, key: null }
 }
 
 const addRow = () => {
@@ -115,8 +153,7 @@ const addRow = () => {
     const defaultKeys = ['CurrentSchoolYear', 'ReportingDistrictCode', 'ReportingSchoolCode', 'EDSSN', 'PosCode', 'CTEProgType', 'AssignNum', 'StateID']
     defaultKeys.forEach(k => newRow[k] = '')
   }
-  localItems.value.unshift(newRow)
-  emit('update:items', localItems.value)
+  emit('add-row', newRow)
 }
 
 const exportData = () => {
