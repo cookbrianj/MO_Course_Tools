@@ -1,7 +1,10 @@
 <template>
   <div class="data-table-container">
     <div class="d-flex justify-space-between align-center mb-4">
-      <h3 class="text-h6 font-weight-regular">{{ title }}</h3>
+      <div class="d-flex align-center">
+        <h3 class="text-h6 font-weight-regular mr-4">{{ title }}</h3>
+        <slot name="bulk-actions"></slot>
+      </div>
       <div>
         <v-btn color="primary" variant="text" prepend-icon="mdi-plus" @click="addRow" class="mr-2">
           Add Record
@@ -24,6 +27,7 @@
         <tr>
           <td v-for="header in headers" :key="header.key" class="pa-1 bg-grey-lighten-4">
             <v-text-field
+              v-if="header.key !== 'actions'"
               v-model="filters[header.key]"
               density="compact"
               variant="outlined"
@@ -36,26 +40,31 @@
       </template>
 
       <template v-slot:item="{ item }">
-        <tr>
+        <tr :class="{ 'bg-green-lighten-4': (item.raw || item)._reconstructed }">
           <td v-for="header in headers" :key="header.key" :class="{ 'error-cell': isError(item.raw || item, header.key) }">
-            <div 
-              v-if="editingCell.item !== item || editingCell.key !== header.key"
-              @click="startEdit(item, header.key, (item.raw || item)[header.key])"
-              class="editable-cell"
-            >
-              {{ (item.raw || item)[header.key] || ' ' }}
-            </div>
-            <v-text-field
-              v-else
-              v-model="editingValue"
-              density="compact"
-              hide-details
-              variant="underlined"
-              autofocus
-              @blur="saveEdit(item, header.key)"
-              @keyup.enter="saveEdit(item, header.key)"
-              @keyup.esc="cancelEdit"
-            ></v-text-field>
+            <template v-if="header.key === 'actions'">
+              <slot name="item-actions" :item="item.raw || item"></slot>
+            </template>
+            <template v-else>
+              <div 
+                v-if="editingCell.item !== item || editingCell.key !== header.key"
+                @click="startEdit(item, header.key, (item.raw || item)[header.key])"
+                class="editable-cell"
+              >
+                {{ (item.raw || item)[header.key] || ' ' }}
+              </div>
+              <v-text-field
+                v-else
+                v-model="editingValue"
+                density="compact"
+                hide-details
+                variant="underlined"
+                autofocus
+                @blur="saveEdit(item, header.key)"
+                @keyup.enter="saveEdit(item, header.key)"
+                @keyup.esc="cancelEdit"
+              ></v-text-field>
+            </template>
           </td>
         </tr>
       </template>
@@ -77,6 +86,14 @@ const props = defineProps({
   errorCheck: {
     type: Function,
     default: () => false
+  },
+  externalFilter: {
+    type: Function,
+    default: () => true
+  },
+  showActions: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -90,19 +107,25 @@ watch(() => props.items, (newItems) => {
 
 const headers = computed(() => {
   if (localItems.value.length === 0) return []
-  const keys = Object.keys(localItems.value[0])
-  return keys.map(key => ({
+  const keys = Object.keys(localItems.value[0]).filter(k => k !== '_reconstructed')
+  const h = keys.map(key => ({
     title: key,
     key: key,
     align: 'start',
     sortable: true
   }))
+  if (props.showActions) {
+    h.push({ title: 'Actions', key: 'actions', align: 'center', sortable: false })
+  }
+  return h
 })
 
 const filters = ref({})
 
 const filteredItems = computed(() => {
   return localItems.value.filter(row => {
+    if (!props.externalFilter(row)) return false
+    
     for (const key in filters.value) {
       const filterValue = filters.value[key]
       if (filterValue) {
@@ -157,7 +180,13 @@ const addRow = () => {
 }
 
 const exportData = () => {
-  const csv = Papa.unparse(localItems.value)
+  // Strip _reconstructed internal flag before exporting
+  const cleanItems = localItems.value.map(item => {
+    const cleanItem = { ...item }
+    delete cleanItem._reconstructed
+    return cleanItem
+  })
+  const csv = Papa.unparse(cleanItems)
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const link = document.createElement('a')
   const url = URL.createObjectURL(blob)
