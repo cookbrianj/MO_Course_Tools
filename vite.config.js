@@ -4,6 +4,7 @@ import vuetify from 'vite-plugin-vuetify'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/MO_Course_Tools/',
   plugins: [
     vue(),
     vuetify({ autoImport: true }),
