@@ -523,17 +523,19 @@ const revalidate = () => {
     return
   }
 
+  const joinKeys = studentKeys.filter(k => k !== 'PosCode')
+
   // Missing from Assignment
-  const octStudentSet = new Set(datasets.octStudent.map(row => generateKeyString(row, studentKeys)))
+  const octStudentSet = new Set(datasets.octStudent.map(row => generateKeyString(row, joinKeys)))
   missingFromAssignment.value = datasets.juneCompletion.filter(juneRow => {
-    const juneKey = generateKeyString(juneRow, studentKeys)
+    const juneKey = generateKeyString(juneRow, joinKeys)
     return !octStudentSet.has(juneKey)
   })
 
   // Missing from Completion
-  const juneCompletionSet = new Set(datasets.juneCompletion.map(row => generateKeyString(row, studentKeys)))
+  const juneCompletionSet = new Set(datasets.juneCompletion.map(row => generateKeyString(row, joinKeys)))
   missingFromCompletion.value = datasets.octStudent.filter(octRow => {
-    const octKey = generateKeyString(octRow, studentKeys)
+    const octKey = generateKeyString(octRow, joinKeys)
     return !juneCompletionSet.has(octKey)
   })
 }
