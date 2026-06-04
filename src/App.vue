@@ -429,6 +429,10 @@ const buildAssignmentRow = (juneRow, silent = false) => {
       return searchTerms.some(term => cleanK.includes(term))
     })
   }
+  
+  const findExactKey = (keys, searchTerm) => {
+    return keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === searchTerm)
+  }
 
   const targetGenderKey = findKey(targetKeys, ['gender'])
   const targetRaceKey = findKey(targetKeys, ['race', 'ethnicity'])
@@ -451,16 +455,16 @@ const buildAssignmentRow = (juneRow, silent = false) => {
     const isJuneRequested = ['loccoursenum', 'loccoursename', 'locsecnum', 'coursenum'].includes(cleanTKey)
 
     if (isStudentKey) {
-      const jKey = findKey(juneKeys, [cleanTKey])
+      const jKey = findExactKey(juneKeys, cleanTKey) || findKey(juneKeys, [cleanTKey])
       newRow[tKey] = jKey ? juneRow[jKey] : ''
     }
     else if (isCoreRequested) {
-      const cKey = findKey(Object.keys(coreMatch), [cleanTKey])
-      const jKey = findKey(juneKeys, [cleanTKey])
+      const cKey = findExactKey(Object.keys(coreMatch), cleanTKey)
+      const jKey = findExactKey(juneKeys, cleanTKey)
       newRow[tKey] = cKey ? coreMatch[cKey] : (jKey ? juneRow[jKey] : '')
     }
     else if (isJuneRequested) {
-      const jKey = findKey(juneKeys, [cleanTKey])
+      const jKey = findExactKey(juneKeys, cleanTKey)
       newRow[tKey] = jKey ? juneRow[jKey] : ''
     }
     else if (tKey === targetDobKey && juneDobKey) {
@@ -501,11 +505,11 @@ const buildAssignmentRow = (juneRow, silent = false) => {
     if (!existingKey) {
       const cleanKey = key.toLowerCase()
       if (source === 'core') {
-        const cKey = findKey(Object.keys(coreMatch), [cleanKey])
-        const jKey = findKey(juneKeys, [cleanKey])
+        const cKey = findExactKey(Object.keys(coreMatch), cleanKey)
+        const jKey = findExactKey(juneKeys, cleanKey)
         newRow[key] = cKey ? coreMatch[cKey] : (jKey ? juneRow[jKey] : '')
       } else {
-        const jKey = findKey(juneKeys, [cleanKey])
+        const jKey = findExactKey(juneKeys, cleanKey)
         newRow[key] = jKey ? juneRow[jKey] : ''
       }
     }
