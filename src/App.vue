@@ -129,6 +129,9 @@
                     <v-btn color="info" variant="elevated" size="small" prepend-icon="mdi-auto-fix" @click="reconstructAll" class="mr-4">
                       Reconstruct All Possible
                     </v-btn>
+                    <v-btn color="success" variant="elevated" size="small" prepend-icon="mdi-download" @click="generateAssignmentRecordsAndDownload" class="mr-4">
+                      Generate Assignment Records and Download
+                    </v-btn>
                   </template>
                   <template v-slot:item-actions="{ item }">
                     <v-btn icon="mdi-auto-fix" color="info" variant="text" size="small" @click="reconstructSingle(item)" title="Auto-Reconstruct"></v-btn>
@@ -390,8 +393,8 @@ const findDemographics = (stateId) => {
   return match
 }
 
-const reconstructRow = (juneRow, silent = false) => {
-  if (!datasets.octStudent.length) return false
+const buildAssignmentRow = (juneRow, silent = false) => {
+  if (!datasets.octStudent.length) return null
   
   const juneKeys = Object.keys(juneRow)
   const stateIdKey = juneKeys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'stateid' || k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'mosisid')
@@ -399,19 +402,19 @@ const reconstructRow = (juneRow, silent = false) => {
   
   if (!stateId) {
     if (!silent) showMessage('Could not find StateID in the June record.', 'error')
-    return false
+    return null
   }
 
   const coreMatch = findDemographics(stateId)
   if (!coreMatch) {
     if (!silent) showMessage(`StateID ${stateId} not found in October Student Core File.`, 'error')
-    return false
+    return null
   }
   
   const targetKeys = Object.keys(datasets.octStudent[0] || {})
   if (targetKeys.length === 0) {
     if (!silent) showMessage('October Student file has no columns to map to.', 'error')
-    return false
+    return null
   }
   
   const newRow = { _reconstructed: true }
@@ -465,8 +468,53 @@ const reconstructRow = (juneRow, silent = false) => {
     }
   })
 
-  datasets.octStudent.unshift(newRow)
-  return true
+  return newRow
+}
+
+const reconstructRow = (juneRow, silent = false) => {
+  const newRow = buildAssignmentRow(juneRow, silent)
+  if (newRow) {
+    datasets.octStudent.unshift(newRow)
+    return true
+  }
+  return false
+}
+
+const generateAssignmentRecordsAndDownload = () => {
+  if (!datasets.octStudentCore.length) {
+    showMessage('Please upload the October Student Core file first.', 'warning')
+    return
+  }
+  
+  const visibleMissing = missingFromAssignment.value.filter(row => isRowVisible(row, 'juneCompletion'))
+  
+  const newRecords = []
+  
+  visibleMissing.forEach(row => {
+    const newRow = buildAssignmentRow(row, true)
+    if (newRow) {
+      const exportRow = { ...newRow }
+      delete exportRow._reconstructed
+      newRecords.push(exportRow)
+    }
+  })
+  
+  if (newRecords.length > 0) {
+    const csv = Papa.unparse(newRecords)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', 'Generated_Assignment_Records.csv')
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    showMessage(`Successfully generated and downloaded ${newRecords.length} record(s).`, 'success')
+  } else {
+    showMessage('Could not generate any records. Make sure the Student Core file contains matching State IDs.', 'error')
+  }
 }
 
 const reconstructSingle = (row) => {
