@@ -55,7 +55,7 @@
           </v-col>
           <v-col cols="12" md="3">
             <v-card class="elevation-1 rounded-lg pa-4">
-              <h3 class="text-subtitle-1 font-weight-bold mb-2" title="October Student Core">4. Oct Student Core</h3>
+              <h3 class="text-subtitle-1 font-weight-bold mb-2" title="June Student Core">4. June Student Core</h3>
               <v-file-input
                 v-model="files.octStudentCore"
                 accept=".csv,.txt,.tsv"
@@ -291,6 +291,8 @@ const normalizeRow = (row) => {
       val = String(val).trim().padStart(6, '0')
     } else if (cleanKey === 'ReportingSchoolCode' && val) {
       val = String(val).trim().padStart(4, '0')
+    } else if (cleanKey === 'EDSSN' && val) {
+      val = String(val).trim().padStart(10, '0')
     }
     normalized[cleanKey] = val
   }
@@ -304,6 +306,8 @@ const generateKeyString = (row, keys) => {
       val = val.padStart(6, '0')
     } else if (k === 'ReportingSchoolCode' && val) {
       val = val.padStart(4, '0')
+    } else if (k === 'EDSSN' && val) {
+      val = val.padStart(10, '0')
     }
     return val
   }).join('|')
@@ -407,7 +411,7 @@ const buildAssignmentRow = (juneRow, silent = false) => {
 
   const coreMatch = findDemographics(stateId)
   if (!coreMatch) {
-    if (!silent) showMessage(`StateID ${stateId} not found in October Student Core File.`, 'error')
+    if (!silent) showMessage(`StateID ${stateId} not found in June Student Core File.`, 'error')
     return null
   }
   
@@ -443,8 +447,19 @@ const buildAssignmentRow = (juneRow, silent = false) => {
   targetKeys.forEach(tKey => {
     const cleanTKey = tKey.toLowerCase().replace(/[^a-z0-9]/g, '')
     const isStudentKey = studentKeys.some(sk => sk.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTKey)
+    const isCoreRequested = ['localstudentid', 'studentlastname', 'studentfirstname', 'studentmiddlename', 'studentnamesuffix'].includes(cleanTKey)
+    const isJuneRequested = ['loccoursenum', 'loccoursename', 'locsecnum', 'coursenum'].includes(cleanTKey)
 
     if (isStudentKey) {
+      const jKey = findKey(juneKeys, [cleanTKey])
+      newRow[tKey] = jKey ? juneRow[jKey] : ''
+    }
+    else if (isCoreRequested) {
+      const cKey = findKey(Object.keys(coreMatch), [cleanTKey])
+      const jKey = findKey(juneKeys, [cleanTKey])
+      newRow[tKey] = cKey ? coreMatch[cKey] : (jKey ? juneRow[jKey] : '')
+    }
+    else if (isJuneRequested) {
       const jKey = findKey(juneKeys, [cleanTKey])
       newRow[tKey] = jKey ? juneRow[jKey] : ''
     }
@@ -468,6 +483,34 @@ const buildAssignmentRow = (juneRow, silent = false) => {
     }
   })
 
+  // Ensure the requested columns exist in the output even if missing from targetKeys
+  const requestedColumns = [
+    { key: 'LocalStudentID', source: 'core' },
+    { key: 'StudentLastName', source: 'core' },
+    { key: 'StudentFirstName', source: 'core' },
+    { key: 'StudentMiddleName', source: 'core' },
+    { key: 'StudentNameSuffix', source: 'core' },
+    { key: 'LocCourseNum', source: 'june' },
+    { key: 'LocCourseName', source: 'june' },
+    { key: 'LocSecNum', source: 'june' },
+    { key: 'CourseNum', source: 'june' }
+  ]
+
+  requestedColumns.forEach(({ key, source }) => {
+    const existingKey = Object.keys(newRow).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === key.toLowerCase())
+    if (!existingKey) {
+      const cleanKey = key.toLowerCase()
+      if (source === 'core') {
+        const cKey = findKey(Object.keys(coreMatch), [cleanKey])
+        const jKey = findKey(juneKeys, [cleanKey])
+        newRow[key] = cKey ? coreMatch[cKey] : (jKey ? juneRow[jKey] : '')
+      } else {
+        const jKey = findKey(juneKeys, [cleanKey])
+        newRow[key] = jKey ? juneRow[jKey] : ''
+      }
+    }
+  })
+
   return newRow
 }
 
@@ -482,7 +525,7 @@ const reconstructRow = (juneRow, silent = false) => {
 
 const generateAssignmentRecordsAndDownload = () => {
   if (!datasets.octStudentCore.length) {
-    showMessage('Please upload the October Student Core file first.', 'warning')
+    showMessage('Please upload the June Student Core file first.', 'warning')
     return
   }
   
@@ -519,7 +562,7 @@ const generateAssignmentRecordsAndDownload = () => {
 
 const reconstructSingle = (row) => {
   if (!datasets.octStudentCore.length) {
-    showMessage('Please upload the October Student Core file first.', 'warning')
+    showMessage('Please upload the June Student Core file first.', 'warning')
     return
   }
   const success = reconstructRow(row)
@@ -531,7 +574,7 @@ const reconstructSingle = (row) => {
 
 const reconstructAll = () => {
   if (!datasets.octStudentCore.length) {
-    showMessage('Please upload the October Student Core file first.', 'warning')
+    showMessage('Please upload the June Student Core file first.', 'warning')
     return
   }
   
